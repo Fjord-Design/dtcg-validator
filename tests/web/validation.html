@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>DTCG validator browser smoke test</title>
+</head>
+<body>
+  RUNNING
+  <script type="module">
+    function assert(condition, message) {
+      if (!condition) throw new Error(message);
+    }
+
+    async function fixture(path) {
+      const url = new URL(path, import.meta.url);
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Fixture fetch failed: ${url} (${response.status} ${response.statusText})`);
+      }
+      return response.text();
+    }
+
+    function checkReport(report, expectedValid, label) {
+      assert(
+        report !== null && typeof report === 'object' &&
+          Object.getPrototypeOf(report) === Object.prototype,
+        `${label}: validate must return a native object, not serialized JSON`
+      );
+      assert(
+        Object.keys(report).sort().join(',') === 'diagnostics,valid',
+        `${label}: report must contain exactly valid and diagnostics`
+      );
+      assert(report.valid === expectedValid, `${label}: unexpected valid flag`);
+      assert(Array.isArray(report.diagnostics), `${label}: diagnostics must be an array`);
+      assert(
+        report.valid === (report.diagnostics.length === 0),
+        `${label}: valid must agree with the diagnostic count`
+      );
+      for (const diagnostic of report.diagnostics) {
+        assert(
+          diagnostic !== null && typeof diagnostic === 'object' &&
+            Object.getPrototypeOf(diagnostic) === Object.prototype,
+          `${label}: each diagnostic must be a native object`
+        );
+        assert(
+          Object.keys(diagnostic).sort().join(',') === 'code,message,path',
+          `${label}: diagnostic must contain exactly path, code and message`
+        );
+        assert(typeof diagnostic.path === 'string', `${label}: path must be a string`);
+        assert(
+          typeof diagnostic.code === 'string' && diagnostic.code.length > 0,
+          `${label}: code must be a nonempty string`
+        );
+        assert(
+          typeof diagnostic.message === 'string' && diagnostic.message.length > 0,
+          `${label}: message must be a nonempty string`
+        );
+      }
+    }
+
+    try {
+      const { default: init, validate, version } = await import('../../pkg/dtcg_validator.js');
+      await init();
+      assert(typeof version === 'function', 'The version API must remain exported');
+      const packageVersion = version();
+      assert(
+        typeof packageVersion === 'string' && packageVersion.length > 0,
+        'The version API must return a nonempty string'
+      );
+
+      // Fetch the unchanged pinned inputs also used by the core and CLI tests.
+      const [validInput, invalidInput] = await Promise.all([
+        fixture('../fixtures/dtcg-2025.10/positive/colors/srgb-basic.json'),
+        fixture('../fixtures/dtcg-2025.10/negative/numbers/number-string.json'),
+      ]);
+      const validReport = validate(validInput);
+      const invalidReport = validate(invalidInput);
+      checkReport(validReport, true, 'srgb-basic');
+      checkReport(invalidReport, false, 'number-string');
+      assert(
+        invalidReport.diagnostics.some(({ path }) => path === '/invalid-number/$value'),
+        'number-string: the diagnostic must retain the original /invalid-number/$value path'
+      );
+      document.body.textContent = 'PASS';
+    } catch (error) {
+      document.body.textContent = `FAIL\n${error instanceof Error ? error.stack || error.message : String(error)}`;
+    }
+  </script>
+</body>
+</html>

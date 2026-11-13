@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dtcg-validator web example</title>
+  <style>
+    textarea { box-sizing: border-box; width: 100%; max-width: 60rem; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <h1>DTCG validator</h1>
+  <p>dtcg-validator version: <span id="version">loading…</span></p>
+  <form id="validation-form">
+    <p id="input-help">Paste a DTCG 2025.10 design tokens document, then select Validate.</p>
+    <label for="document">Design tokens JSON</label><br>
+    <textarea id="document" name="document" rows="16" spellcheck="false" aria-describedby="input-help result">{
+  "n": {
+    "$type": "number",
+    "$value": 1
+  }
+}</textarea>
+    <p><button id="validate" type="submit" disabled>Validate</button></p>
+  </form>
+  <h2>Validation result</h2>
+  <pre id="result" role="status" aria-live="polite" aria-atomic="true">Loading validator…</pre>
+  <script type="module">
+    // Build the package first: wasm-pack build --target web
+    // Serve the project root over HTTP, e.g.: python3 -m http.server
+    const form = document.getElementById('validation-form');
+    const input = document.getElementById('document');
+    const button = document.getElementById('validate');
+    const result = document.getElementById('result');
+    const versionLabel = document.getElementById('version');
+
+    try {
+      const { default: init, version, validate } = await import('../../pkg/dtcg_validator.js');
+      await init();
+      versionLabel.textContent = version();
+
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        try {
+          const report = validate(input.value);
+          input.setAttribute('aria-invalid', String(!report.valid));
+          result.textContent = report.valid
+            ? 'Valid design tokens document.'
+            : 'Invalid design tokens document.\n' + report.diagnostics.map(({ path, code, message }) =>
+                `${path === '' ? '"" (document root)' : path} [${code}]: ${message}`
+              ).join('\n');
+        } catch (error) {
+          input.removeAttribute('aria-invalid');
+          result.textContent = `Validation failed: ${String(error)}`;
+        }
+      });
+
+      result.textContent = 'Ready to validate.';
+      button.disabled = false;
+    } catch (error) {
+      versionLabel.textContent = 'unavailable';
+      result.textContent = `Could not initialize validator: ${String(error)}\nBuild the package with wasm-pack build --target web and serve the project root over HTTP.`;
+    }
+  </script>
+</body>
+</html>
